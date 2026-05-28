@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""
+SN Zoom Incident Rooms — Test Suite
+Copyright (C) 2026 Vladimir Kapustin
+SPDX-License-Identifier: AGPL-3.0-only
+"""
 import json, os, sys, tempfile
 from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
