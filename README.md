@@ -107,6 +107,27 @@ sn_zoom_incident_rooms/
 - **GDPR compliance:** No PII stored in reports; meeting recordings auto-deleted after configurable retention period (default 30 days)
 - **Multi-format export:** Audit data exportable as MD, JSON, or CSV for BI integration
 
+## Quick Start
+
+For experienced ServiceNow admins who want to get running in under 10 minutes:
+
+```bash
+# 1. Clone and import
+git clone https://github.com/vladarchitectservicenow-oss/sn_zoom_incident_rooms.git
+# Import src/sys_app.xml via ServiceNow Studio → Import Application
+
+# 2. Configure Zoom credentials (one record in x_sn_zoom_incident_rooms_config)
+#    Fields: zoom_account_id, zoom_client_id, zoom_client_secret, active=true
+
+# 3. Map one assignment group to a Zoom host
+#    Table: x_sn_zoom_incident_rooms_oncall_map
+#    Fields: assignment_group_sys_id, zoom_user_email, priority=1
+
+# 4. Create a test P1 incident — check work notes for the Zoom URL within 2 seconds
+```
+
+**What you get:** Zero-touch P1 war rooms, on-call auto-resolution, immutable audit trail, and OAuth 2.0 security — all from ~15 minutes of configuration. Proceed to **Installation** for step-by-step details with screenshots and troubleshooting.
+
 ## Installation
 
 ### Prerequisites
@@ -187,15 +208,30 @@ Create a test P1 incident. Within 2 seconds, check the work notes for the Zoom j
 
 ### Annual Savings (10 P1 Incidents/Month)
 
-| Metric | Value |
-|--------|-------|
-| Incidents per year | 120 |
-| Time saved per incident | 7.3 min |
-| Total time saved | 876 min (14.6 hours) |
-| Engineer cost | $85/hour |
-| **Annual savings** | **$1,241** |
-| Additional savings (reduced MTTR) | 5–15 min faster resolution per incident × 120 incidents × $85/hr = $850–$2,550 |
-| **Total annual ROI** | **$2,091–$3,791** |
+| Metric | Year 1 | Year 2 | Year 3 |
+|--------|--------|--------|--------|
+| Incidents per year | 120 | 132 (+10% growth) | 145 (+10% growth) |
+| Time saved per incident | 7.3 min | 7.3 min | 7.3 min |
+| Total time saved | 876 min (14.6 hrs) | 964 min (16.1 hrs) | 1,059 min (17.6 hrs) |
+| Engineer cost | $85/hr | $89/hr (+5% inflation) | $93/hr (+5% inflation) |
+| **Labor savings** | **$1,241** | **$1,433** | **$1,637** |
+| MTTR reduction savings | $850–$2,550 | $935–$2,805 | $1,029–$3,086 |
+| **Total per year** | **$2,091–$3,791** | **$2,368–$4,238** | **$2,666–$4,723** |
+| **Cumulative 3-year savings** | | | **$7,125–$12,752** |
+
+> **Note:** MTTR reduction savings assume 5–15 min faster resolution per incident due to war room being ready at incident creation, multiplied by $85/hr engineer cost and annual incident count.
+
+### Cost of Implementation
+
+| Cost Item | Amount |
+|-----------|--------|
+| Zoom Server-to-Server OAuth app | $0 (included with paid Zoom plan) |
+| sn_zoom_incident_rooms application | $0 (AGPL-3.0 licensed) |
+| ServiceNow instance | $0 (uses existing instance) |
+| Installation labor (one-time) | ~2 hours × $85/hr = $170 |
+| Annual maintenance (config updates, Zoom credential rotation) | ~4 hours × $85/hr = $340 |
+| **Total Year 1 cost** | **$510** |
+| **Payback period** | **< 3 months** (Year 1 savings: $2,091–$3,791) |
 
 ### Intangible Benefits
 
@@ -203,6 +239,11 @@ Create a test P1 incident. Within 2 seconds, check the work notes for the Zoom j
 - **Audit compliance:** Every room creation/closure logged immutably → no "who created this meeting?" questions
 - **Reduced cognitive load:** Engineers focus on fixing the problem, not coordinating logistics
 - **Onboarding:** New incident managers don't need to learn Zoom → system handles it
+- **Mean Time to Acknowledge (MTTA) improvement:** Auto-posted Zoom link eliminates the 2–5 minute window between incident creation and first responder engagement
+- **Regulatory readiness:** GDPR-compliant immutable logs support SOC 2, ISO 27001, and HIPAA audit requirements
+- **Scalability:** Same infrastructure handles 10 or 100 P1 incidents/month without additional operational headcount
+- **Developer experience:** CLI testing tool enables pre-production validation without touching a production ServiceNow instance
+- **Vendor neutrality path:** Architecture supports future Webex/Google Meet plugins (v1.2 roadmap) — avoids single-vendor lock-in
 
 ## Troubleshooting
 
@@ -218,6 +259,36 @@ Create a test P1 incident. Within 2 seconds, check the work notes for the Zoom j
 | Token refresh fails silently | Zoom OAuth endpoint unreachable or credentials rotated | Check ServiceNow outbound HTTP logs (`sys_outbound_http_log`); verify network allows egress to `api.zoom.us:443` |
 | CLI tool fails with `ImportError: src.engine` | Running from wrong directory | Run from repo root: `cd sn_zoom_incident_rooms && python3 src/cli.py ...` |
 | No audit log entry despite room created | Transaction rolled back after room creation | Check Business Rule order; ensure log insert happens in same transaction as Zoom API call; verify no `abort_action` in subsequent Business Rules |
+
+## FAQ
+
+### General Questions
+
+**Q: Why not just use a Zoom link in the incident template?**
+A: Static links lack per-incident security (no unique passwords), can't auto-resolve on-call engineers, and don't provide an audit trail. Every incident gets the same Zoom room — a major security risk for P1 incidents that may involve sensitive customer data.
+
+**Q: What happens if Zoom is down during a P1 incident?**
+A: The application retries 3 times with exponential backoff (2s → 4s → 8s). If all retries fail, it logs the failure with `status=FAILED` and posts a fallback message to the incident work notes: "Zoom API unavailable — please create a manual meeting." The incident is never blocked — it proceeds normally, and you can retry via the REST API when Zoom recovers.
+
+**Q: Does this work with Zoom Gov or Zoom Phone?**
+A: Yes, any Zoom plan that supports Server-to-Server OAuth. Configure the `api_base_url` system property to point to `https://zoomgov.com` for Zoom Gov. Zoom Phone is not used — the integration is meetings-only.
+
+**Q: Can I use this for P2/P3 incidents too?**
+A: The Business Rule fires on `priority=1` by default. To extend: modify the Business Rule's condition to `priority<=3` or create a secondary rule. Be aware that lower-priority incidents generate less frequent rooms — the deduplication and concurrent cap protect against abuse.
+
+**Q: How do I rotate Zoom credentials without downtime?**
+A: Create a **second** config record with `active=true` and the new credentials, then deactivate the old one. The engine queries `active=true` — the switch is instantaneous. No service restart required. Both records can coexist briefly during rotation.
+
+**Q: What prevents an attacker from creating unlimited Zoom rooms?**
+A: Three layers of protection: (1) The REST API requires `incident_manager` role. (2) The 50-room concurrent cap prevents flooding. (3) The audit trail records every creation with `created_by` — unusual patterns trigger admin alerts. Additionally, Zoom's own rate limits apply at the OAuth app level.
+
+### Integration Questions
+
+**Q: We use PagerDuty/Opsgenie for on-call. Will this work?**
+A: Yes, but you'll need to write a sync script that maps PagerDuty/Opsgenie schedules to `x_sn_zoom_incident_rooms_oncall_map`. The on-call resolution queries ServiceNow's native `cmn_schedule` — if your PagerDuty already syncs to ServiceNow schedules (common), it works out of the box. If not, the REST API call `room_status` can be triggered from PagerDuty webhooks.
+
+**Q: Can I customize the Zoom meeting settings (recording, polls, breakout rooms)?**
+A: Yes. The `POST /v2/users/me/meetings` payload is templated in `engine.py` via `_build_meeting_payload()`. Modify the template to enable recording (`auto_recording: "cloud"`), polls, breakout rooms, or any Zoom API parameter. The template supports Jinja2-style variables for incident fields.
 
 ## Security Considerations
 
